@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Валентинка</title>
+
+<style>
+:root { --bg1:#ffe6f0; --bg2:#fff6fb; --card:#ffffffcc; }
+* { box-sizing: border-box; }
+
+body{
+  margin:0;
+  min-height:100vh;
+  display:grid;
+  place-items:center;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  background: radial-gradient(circle at 20% 20%, var(--bg2), var(--bg1));
+  overflow:hidden;
+}
+
+.card{
+  width:min(680px, 92vw);
+  padding:32px 26px;
+  border-radius:24px;
+  background:var(--card);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 14px 45px rgba(0,0,0,.12);
+  text-align:center;
+  position:relative;
+  z-index: 1;
+  overflow: visible; /* важно: чтобы "нет" могла выходить за рамку */
+}
+
+/* Заголовок: 1 строка, ровно */
+h1{
+  margin:0 0 22px;
+  font-size: clamp(26px, 3.6vw, 40px);
+  line-height:1.2;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:12px;
+  white-space:nowrap;
+}
+
+.options{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:18px;
+}
+
+/* фиксируем 2 ячейки => "да" никогда не сдвигается */
+.slot{
+  width:170px;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+}
+
+.opt{
+  display:inline-flex;
+  justify-content:center;
+  align-items:center;
+  gap:10px;
+
+  padding:12px 18px;
+  border-radius:16px;
+  border:2px solid rgba(0,0,0,.12);
+  background:#fff;
+  box-shadow: 0 6px 20px rgba(0,0,0,.06);
+  cursor:pointer;
+  font-size:20px;
+  font-weight:600;
+  user-select:none;
+  white-space:nowrap;
+}
+
+.opt input{ width:20px; height:20px; cursor:pointer; }
+
+/* ВАЖНО: "нет" всегда поверх всего и двигается только transform'ом */
+#noBtn{
+  position:relative;
+  z-index: 999999;
+  will-change: transform;
+  transform: translate3d(0,0,0);
+}
+
+.heartBig{
+  position:absolute;
+  left:50%;
+  top:48%;
+  transform: translate(-50%, -50%) scale(0);
+  font-size: clamp(64px, 9vw, 120px);
+  opacity:0;
+  transition:.2s ease;
+  pointer-events:none;
+}
+.heartBig.show{
+  transform: translate(-50%, -50%) scale(1);
+  opacity:1;
+}
+
+.message{
+  margin-top:22px;
+  font-size: clamp(22px, 3vw, 32px);
+  font-weight:700;
+  opacity:0;
+  transition:.35s ease;
+}
+.message.show{ opacity:1; }
+</style>
+</head>
+
+<body>
+<div class="card" id="card">
+  <h1>Ты будешь моей Валентинкой? 💘</h1>
+
+  <div class="options" id="options">
+    <div class="slot">
+      <label class="opt">
+        <input type="radio" name="ans" id="yes">
+        да
+      </label>
+    </div>
+
+    <div class="slot">
+      <label class="opt" id="noBtn">
+        <input type="radio" name="ans" id="no">
+        нет
+      </label>
+    </div>
+  </div>
+
+  <div class="heartBig" id="heartBig">💖</div>
+  <div class="message" id="message">Теперь ты моя Валентинка ❤️</div>
+</div>
+
+<script>
+const card = document.getElementById("card");
+const noBtn = document.getElementById("noBtn");
+const noInput = document.getElementById("no");
+const yes = document.getElementById("yes");
+const options = document.getElementById("options");
+const heartBig = document.getElementById("heartBig");
+const message = document.getElementById("message");
+
+// текущий сдвиг (чтобы учитывать уже сделанные перемещения)
+let dx = 0, dy = 0;
+let lock = false;
+
+function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+function randInt(min, maxInc){
+  if (maxInc < min) return min;
+  return min + Math.floor(Math.random() * (maxInc - min + 1));
+}
+
+function viewportSize(){
+  const vw = document.documentElement.clientWidth  || window.innerWidth;
+  const vh = document.documentElement.clientHeight || window.innerHeight;
+  return { vw, vh };
+}
+
+function applyTransform(){
+  noBtn.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
+}
+
+// Двигаем "нет" так, чтобы она была ВЫШЕ карточки (как ты просил)
+// и всегда внутри экрана
+function moveNo(){
+  const { vw, vh } = viewportSize();
+  const pad = 16;
+
+  const btnRect = noBtn.getBoundingClientRect();   // текущая позиция на экране (УЖЕ со сдвигом)
+  const cardRect = card.getBoundingClientRect();
+
+  const w = Math.ceil(btnRect.width);
+  const h = Math.ceil(btnRect.height);
+
+  // хотим выбрать target (абсолютные координаты на экране)
+  const minX = pad;
+  const maxX = Math.max(minX, Math.floor(vw - w - pad));
+
+  // только над карточкой
+  const minY = pad;
+  let maxY = Math.floor(cardRect.top - h - pad);
+  maxY = Math.max(minY, maxY);
+
+  const targetX = randInt(minX, maxX);
+  const targetY = randInt(minY, maxY);
+
+  // переводим target в delta относительно текущего rect
+  // (так мы НЕ меняем position — только transform)
+  dx += (targetX - btnRect.left);
+  dy += (targetY - btnRect.top);
+
+  // страховка: после применения ещё раз “прижмём”, чтобы не вылезло
+  applyTransform();
+
+  const after = noBtn.getBoundingClientRect();
+  const fixX = clamp(after.left, minX, maxX) - after.left;
+  const fixY = clamp(after.top,  minY, maxY) - after.top;
+
+  dx += fixX;
+  dy += fixY;
+  applyTransform();
+}
+
+function runAway(e){
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  if (lock) return;
+  lock = true;
+
+  // чтобы курсор не “цеплял” снова мгновенно
+  noBtn.style.pointerEvents = "none";
+
+  requestAnimationFrame(() => {
+    moveNo();
+    setTimeout(() => {
+      noBtn.style.pointerEvents = "auto";
+      lock = false;
+    }, 80);
+  });
+}
+
+// Стабильно в Safari: pointerenter + pointerdown
+noBtn.addEventListener("pointerenter", runAway, {passive:false});
+noBtn.addEventListener("pointerdown", runAway, {passive:false});
+noInput.addEventListener("click", runAway, {passive:false});
+
+yes.addEventListener("change", ()=>{
+  if (!yes.checked) return;
+
+  heartBig.classList.add("show");
+  setTimeout(()=>heartBig.classList.remove("show"), 200);
+
+  options.style.display = "none";
+  noBtn.style.display = "none";
+  message.classList.add("show");
+});
+
+window.addEventListener("resize", () => {
+  // при ресайзе просто гарантируем, что "нет" останется видимой (если она уже бегает)
+  // (тут достаточно одного moveNo, он прижмёт координаты)
+  if (noBtn.style.display === "none") return;
+  requestAnimationFrame(() => {
+    // если уже далеко, мягко вернуть в безопасную область
+    moveNo();
+  });
+});
+</script>
+</body>
+</html>
